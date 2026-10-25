@@ -134,15 +134,27 @@ function fromQR(text){
   let name='';try{const u=new URL(text);name=decodeURIComponent(u.pathname.replace(/^\/+/,''));const iss=u.searchParams.get('issuer');if(iss&&!name.startsWith(iss))name=iss+' - '+name}catch(e){}
   setKey(text,name);return true}
 function decodeImg(img){
-  const c=document.createElement('canvas');c.width=img.naturalWidth||img.width;c.height=img.naturalHeight||img.height;
-  const x=c.getContext('2d');x.drawImage(img,0,0);
-  const d=x.getImageData(0,0,c.width,c.height);
-  return window.jsQR?jsQR(d.data,c.width,c.height):null}
+  if(!window.jsQR)return null;
+  const w=img.naturalWidth||img.width,h=img.naturalHeight||img.height;
+  for(const sc of [1,2,3,4,6,0.5]){
+    const pad=Math.round(Math.max(w,h)*sc*0.15)+20;
+    const cw=Math.round(w*sc)+pad*2,ch=Math.round(h*sc)+pad*2;
+    if(cw>5000||ch>5000)continue;
+    const c=document.createElement('canvas');c.width=cw;c.height=ch;
+    const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,cw,ch);
+    x.imageSmoothingEnabled=sc<1;x.drawImage(img,pad,pad,Math.round(w*sc),Math.round(h*sc));
+    const d=x.getImageData(0,0,cw,ch);
+    const r=jsQR(d.data,cw,ch,{inversionAttempts:'attemptBoth'});
+    if(r)return r}
+  return null}
 $('up').onclick=()=>$('file').click();
 $('file').onchange=e=>{
   const f=e.target.files[0];if(!f)return;
-  const img=new Image();img.onload=()=>{const r=decodeImg(img);r?fromQR(r.data):$('msg').textContent='No QR code found in image.'};
+  const img=new Image();img.onload=async()=>{const n=await nativeDecode(img);if(n){fromQR(n);return}const r=decodeImg(img);if(!window.jsQR){$('msg').textContent='QR library failed to load. Check your internet connection and reload.';return}r?fromQR(r.data):$('msg').textContent='No QR code found. Make sure the whole QR is visible, with some white border, and the image is large.'};
   img.src=URL.createObjectURL(f);e.target.value=''};
+async function nativeDecode(img){
+  try{if(!('BarcodeDetector' in window))return null;
+    const r=await new BarcodeDetector({formats:['qr_code']}).detect(img);return r[0]?r[0].rawValue:null}catch(e){return null}}
 let stream=null;
 function stopCam(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}$('vid').style.display='none'}
 $('scan').onclick=async()=>{

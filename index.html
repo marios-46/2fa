@@ -70,7 +70,12 @@ video{width:100%;border-radius:12px;margin-top:14px;display:none;background:#000
 <button class="copy" id="copy">Copy Code</button>
 </section>
 </main>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<script>
+(function(){const u=["https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js","https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js","https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"];
+let i=0;function next(){if(window.jsQR||i>=u.length)return;const e=document.createElement('script');e.src=u[i++];e.onerror=next;document.head.appendChild(e)}
+window.loadQR=()=>new Promise(r=>{if(window.jsQR)return r(true);const t=setInterval(()=>{if(window.jsQR){clearInterval(t);r(true)}},100);setTimeout(()=>{clearInterval(t);r(!!window.jsQR)},6000)});
+next()})();
+</script>
 <script>
 const $=id=>document.getElementById(id);
 const bar=$('bar');for(let i=0;i<30;i++)bar.appendChild(document.createElement('i'));
@@ -150,7 +155,7 @@ function decodeImg(img){
 $('up').onclick=()=>$('file').click();
 $('file').onchange=e=>{
   const f=e.target.files[0];if(!f)return;
-  const img=new Image();img.onload=async()=>{const n=await nativeDecode(img);if(n){fromQR(n);return}const r=decodeImg(img);if(!window.jsQR){$('msg').textContent='QR library failed to load. Check your internet connection and reload.';return}r?fromQR(r.data):$('msg').textContent='No QR code found. Make sure the whole QR is visible, with some white border, and the image is large.'};
+  const img=new Image();img.onload=async()=>{const n=await nativeDecode(img);if(n){fromQR(n);return}await loadQR();const r=decodeImg(img);if(!window.jsQR){$('msg').textContent='QR library failed to load. Check your internet connection and reload.';return}r?fromQR(r.data):$('msg').textContent='No QR code found. Make sure the whole QR is visible, with some white border, and the image is large.'};
   img.src=URL.createObjectURL(f);e.target.value=''};
 async function nativeDecode(img){
   try{if(!('BarcodeDetector' in window))return null;

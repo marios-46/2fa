@@ -154,7 +154,7 @@ $('paste').onclick=async()=>{
   try{const t=await navigator.clipboard.readText();$('key').value=t;$('key').dispatchEvent(new Event('input'))}
   catch(e){$('msg').textContent='Clipboard blocked. Paste manually with Ctrl+V.';$('key').focus()}
 };
-$('clear').onclick=()=>{$('key').value='';$('key').dispatchEvent(new Event('input'))};
+$('clear').onclick=()=>{$('key').value='';$('lbl').value='';$('key').dispatchEvent(new Event('input'))};
 $('copy').onclick=async()=>{
   if(!last)return;
   try{await navigator.clipboard.writeText(last)}catch(e){const t=document.createElement('textarea');t.value=last;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove()}
@@ -164,7 +164,7 @@ $('copy').onclick=async()=>{
 function setKey(v,name){$('key').value=v;if(name)$('lbl').value=name;$('key').dispatchEvent(new Event('input'))}
 function fromQR(text){
   if(!/^otpauth:\/\/totp/i.test(text)){$('msg').textContent='QR is not a 2FA (TOTP) code.';return false}
-  let name='';try{const u=new URL(text);name=decodeURIComponent(u.pathname.replace(/^\/+/,''));const iss=u.searchParams.get('issuer');if(iss&&!name.startsWith(iss))name=iss+' - '+name}catch(e){}
+  let name='';try{const u=new URL(text);name=decodeURIComponent(u.pathname.replace(/^\/+/,''));const iss=u.searchParams.get('issuer');name=name.replace(/^([^:]+):\s*/,'$1 - ');if(iss&&!name.startsWith(iss))name=iss+' - '+name}catch(e){}
   setKey(text,name);return true}
 function decodeImg(img){
   if(!window.jsQR)return null;

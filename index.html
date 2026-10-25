@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>2FA Live Code</title>
+<style>
+:root{--bg:#0b0d1a;--card:#121528;--field:#06070f;--line:#252a45;--text:#e8ebff;--mute:#7c84a8;--c1:#00e5ff;--c2:#7c3aed;--err:#ff6b8a;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+:root:not([data-theme="dark"]){color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;min-height:100vh}
+header{display:flex;align-items:center;gap:12px;padding:20px 24px;max-width:1000px;margin:0 auto}
+.logo{width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,var(--c1),var(--c2));display:grid;place-items:center;font-size:20px}
+h1{font-size:22px;margin:0}
+main{max-width:1000px;margin:10px auto 40px;padding:0 16px;display:grid;grid-template-columns:1fr 1fr;background:var(--card);border:1px solid var(--line);border-radius:24px;overflow:hidden}
+section{padding:32px}
+section+section{border-left:1px solid var(--line)}
+label,.tag{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+label{color:var(--c1)}
+textarea{width:100%;height:150px;margin-top:14px;background:var(--field);color:var(--text);border:1px solid var(--line);border-radius:14px;padding:16px;font:16px ui-monospace,Consolas,monospace;resize:none;outline:none}
+textarea:focus{border-color:var(--c1)}
+.row{display:flex;gap:12px;margin-top:16px}
+button{font:inherit;cursor:pointer;color:var(--text)}
+.sec{flex:1;padding:14px;background:var(--card);border:1px solid var(--line);border-radius:12px;font-weight:600}
+.sec:hover{border-color:var(--c1)}
+.msg{margin-top:12px;font-size:13px;color:var(--err);min-height:18px}
+.top{display:flex;justify-content:space-between;align-items:center}
+.tag{color:var(--text)}
+.timer{border:1px solid var(--c1);color:var(--c1);border-radius:8px;padding:6px 12px;font-weight:700;font-size:14px}
+.bar{display:grid;grid-template-columns:repeat(30,1fr);gap:2px;height:22px;margin-top:18px;background:#080a15;padding:4px;border-radius:4px}
+.bar i{background:#10152b;border-radius:1px}
+.bar i.on{background:linear-gradient(var(--c2),var(--c1))}
+.code{margin-top:28px;height:88px;background:var(--field);border:1px solid var(--line);border-radius:14px;display:grid;place-items:center;font:700 40px ui-monospace,Consolas,monospace;letter-spacing:.25em;color:var(--c1)}
+.code.empty{color:var(--mute)}
+.copy{width:100%;margin-top:28px;padding:20px;border:0;border-radius:14px;font-size:18px;font-weight:700;background:linear-gradient(180deg,var(--c1),#3b6cff 55%,var(--c2));color:#fff}
+.note{margin-top:20px;font-size:12px;color:var(--mute);line-height:1.5}
+@media(max-width:760px){main{grid-template-columns:1fr}section+section{border-left:0;border-top:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<header><div class="logo">🔐</div><h1>2FA Live Code</h1></header>
+<main>
+<section>
+<label for="key">Authentication Secret Key</label>
+<textarea id="key" placeholder="e.g. GAXG 243E MR2X QZ..." spellcheck="false"></textarea>
+<div class="row"><button class="sec" id="paste">📋 Paste Key</button><button class="sec" id="clear">✕ Clear</button></div>
+<div class="msg" id="msg"></div>
+<div class="note">Runs entirely in your browser. Your key is never sent anywhere. You can also paste a full <code>otpauth://</code> link.</div>
+</section>
+<section>
+<div class="top"><span class="tag">⚡ Active Token</span><span class="timer" id="timer">30s</span></div>
+<div class="bar" id="bar"></div>
+<div class="code empty" id="code">— — — — — —</div>
+<button class="copy" id="copy">Copy Code</button>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const bar=$('bar');for(let i=0;i<30;i++)bar.appendChild(document.createElement('i'));
+const A='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+let secret=null,period=30,digits=6,algo='SHA-1',last='';
+
+function b32(s){let bits='';for(const c of s){const v=A.indexOf(c);if(v<0)return null;bits+=v.toString(2).padStart(5,'0')}
+const out=[];for(let i=0;i+8<=bits.length;i+=8)out.push(parseInt(bits.slice(i,i+8),2));return new Uint8Array(out)}
+
+function parse(raw){
+  period=30;digits=6;algo='SHA-1';
+  let s=raw.trim();
+  if(/^otpauth:\/\//i.test(s)){try{const u=new URL(s);const p=u.searchParams;s=p.get('secret')||'';
+    if(p.get('period'))period=+p.get('period')||30;if(p.get('digits'))digits=+p.get('digits')||6;
+    const a=(p.get('algorithm')||'').toUpperCase();if(a==='SHA256')algo='SHA-256';if(a==='SHA512')algo='SHA-512'}catch(e){return null}}
+  s=s.replace(/[\s=-]/g,'').toUpperCase();
+  return s?b32(s):null;
+}
+
+async function totp(key,t){
+  const ck=await crypto.subtle.importKey('raw',key,{name:'HMAC',hash:algo},false,['sign']);
+  const buf=new ArrayBuffer(8);const dv=new DataView(buf);
+  const c=Math.floor(t/period);dv.setUint32(0,Math.floor(c/4294967296));dv.setUint32(4,c>>>0);
+  const h=new Uint8Array(await crypto.subtle.sign('HMAC',ck,buf));
+  const o=h[h.length-1]&15;
+  const n=((h[o]&127)<<24|h[o+1]<<16|h[o+2]<<8|h[o+3])%(10**digits);
+  return String(n).padStart(digits,'0');
+}
+
+async function tick(){
+  const now=Date.now()/1000,left=period-Math.floor(now%period);
+  $('timer').textContent=left+'s';
+  const on=Math.round(left/period*30);
+  [...bar.children].forEach((e,i)=>e.className=i<on?'on':'');
+  const el=$('code');
+  if(!secret){el.className='code empty';el.textContent='— — — — — —';last='';return}
+  try{const c=await totp(secret,now);last=c;el.className='code';el.textContent=c.slice(0,digits/2)+' '+c.slice(digits/2)}
+  catch(e){$('msg').textContent='Could not generate code.'}
+}
+
+$('key').addEventListener('input',e=>{
+  const v=e.target.value;
+  if(!v.trim()){secret=null;$('msg').textContent=''}
+  else{const k=parse(v);if(k&&k.length){secret=k;$('msg').textContent=''}else{secret=null;$('msg').textContent='Invalid key. Use letters A–Z and digits 2–7.'}}
+  tick();
+});
+$('paste').onclick=async()=>{
+  try{const t=await navigator.clipboard.readText();$('key').value=t;$('key').dispatchEvent(new Event('input'))}
+  catch(e){$('msg').textContent='Clipboard blocked. Paste manually with Ctrl+V.';$('key').focus()}
+};
+$('clear').onclick=()=>{$('key').value='';$('key').dispatchEvent(new Event('input'))};
+$('copy').onclick=async()=>{
+  if(!last)return;
+  try{await navigator.clipboard.writeText(last)}catch(e){const t=document.createElement('textarea');t.value=last;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove()}
+  $('copy').textContent='Copied ✓';setTimeout(()=>$('copy').textContent='Copy Code',1200);
+};
+tick();setInterval(tick,500);
+</script>
+</body>
+</html>

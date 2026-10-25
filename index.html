@@ -25,6 +25,16 @@ textarea:focus{border-color:var(--c1)}
 button{font:inherit;cursor:pointer;color:var(--text)}
 .sec{flex:1;padding:14px;background:var(--card);border:1px solid var(--line);border-radius:12px;font-weight:600}
 .sec:hover{border-color:var(--c1)}
+.sec.sm{flex:0 0 52px;padding:14px 0}
+input.lbl{width:100%;margin-top:16px;background:var(--field);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font:inherit;outline:none}
+input.lbl:focus{border-color:var(--c1)}
+.saved{margin-top:20px;display:flex;flex-direction:column;gap:8px;max-height:200px;overflow:auto}
+.acc{display:flex;align-items:center;gap:8px;background:var(--field);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.acc.sel{border-color:var(--c1)}
+.acc b{flex:1;cursor:pointer;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acc button{background:none;border:0;color:var(--mute);font-size:16px}
+.acc button:hover{color:var(--err)}
+video{width:100%;border-radius:12px;margin-top:14px;display:none;background:#000}
 .msg{margin-top:12px;font-size:13px;color:var(--err);min-height:18px}
 .top{display:flex;justify-content:space-between;align-items:center}
 .tag{color:var(--text)}
@@ -45,9 +55,13 @@ button{font:inherit;cursor:pointer;color:var(--text)}
 <section>
 <label for="key">Authentication Secret Key</label>
 <textarea id="key" placeholder="e.g. GAXG 243E MR2X QZ..." spellcheck="false"></textarea>
-<div class="row"><button class="sec" id="paste">📋 Paste Key</button><button class="sec" id="clear">✕ Clear</button></div>
+<div class="row"><button class="sec" id="paste">📋 Paste Key</button><button class="sec" id="scan">📷 Scan QR</button><button class="sec sm" id="up" title="Upload QR image">⬆</button><input type="file" id="file" accept="image/*" hidden></div>
+<video id="vid" playsinline muted></video>
+<input class="lbl" id="lbl" placeholder="Account name (e.g. Google - me@gmail.com)">
+<div class="row"><button class="sec" id="save">💾 Save Account</button><button class="sec" id="clear">✕ Clear</button></div>
+<div class="saved" id="saved"></div>
 <div class="msg" id="msg"></div>
-<div class="note">Runs entirely in your browser. Your key is never sent anywhere. You can also paste a full <code>otpauth://</code> link.</div>
+<div class="note">Runs entirely in your browser; keys are never sent anywhere. Saved accounts stay in this browser's storage as plain text, so save only on your own device. You can also paste a full <code>otpauth://</code> link.</div>
 </section>
 <section>
 <div class="top"><span class="tag">⚡ Active Token</span><span class="timer" id="timer">30s</span></div>
@@ -56,6 +70,7 @@ button{font:inherit;cursor:pointer;color:var(--text)}
 <button class="copy" id="copy">Copy Code</button>
 </section>
 </main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 const bar=$('bar');for(let i=0;i<30;i++)bar.appendChild(document.createElement('i'));
@@ -112,6 +127,58 @@ $('copy').onclick=async()=>{
   try{await navigator.clipboard.writeText(last)}catch(e){const t=document.createElement('textarea');t.value=last;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove()}
   $('copy').textContent='Copied ✓';setTimeout(()=>$('copy').textContent='Copy Code',1200);
 };
+
+function setKey(v,name){$('key').value=v;if(name)$('lbl').value=name;$('key').dispatchEvent(new Event('input'))}
+function fromQR(text){
+  if(!/^otpauth:\/\/totp/i.test(text)){$('msg').textContent='QR is not a 2FA (TOTP) code.';return false}
+  let name='';try{const u=new URL(text);name=decodeURIComponent(u.pathname.replace(/^\/+/,''));const iss=u.searchParams.get('issuer');if(iss&&!name.startsWith(iss))name=iss+' - '+name}catch(e){}
+  setKey(text,name);return true}
+function decodeImg(img){
+  const c=document.createElement('canvas');c.width=img.naturalWidth||img.width;c.height=img.naturalHeight||img.height;
+  const x=c.getContext('2d');x.drawImage(img,0,0);
+  const d=x.getImageData(0,0,c.width,c.height);
+  return window.jsQR?jsQR(d.data,c.width,c.height):null}
+$('up').onclick=()=>$('file').click();
+$('file').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  const img=new Image();img.onload=()=>{const r=decodeImg(img);r?fromQR(r.data):$('msg').textContent='No QR code found in image.'};
+  img.src=URL.createObjectURL(f);e.target.value=''};
+let stream=null;
+function stopCam(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}$('vid').style.display='none'}
+$('scan').onclick=async()=>{
+  if(stream){stopCam();return}
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    const v=$('vid');v.srcObject=stream;v.style.display='block';await v.play();
+    const cv=document.createElement('canvas');
+    const loop=()=>{
+      if(!stream)return;
+      if(v.videoWidth){cv.width=v.videoWidth;cv.height=v.videoHeight;const x=cv.getContext('2d');x.drawImage(v,0,0);
+        const d=x.getImageData(0,0,cv.width,cv.height);const r=window.jsQR&&jsQR(d.data,cv.width,cv.height);
+        if(r&&fromQR(r.data)){stopCam();return}}
+      requestAnimationFrame(loop)};
+    loop();
+  }catch(e){stopCam();$('msg').textContent='Camera not available. Use the upload button with a QR screenshot.'}};
+
+let accts=[];
+try{accts=JSON.parse(localStorage.getItem('accts')||'[]')}catch(e){}
+function persist(){try{localStorage.setItem('accts',JSON.stringify(accts))}catch(e){}}
+function render(){
+  const box=$('saved');box.innerHTML='';
+  accts.forEach((a,i)=>{
+    const d=document.createElement('div');d.className='acc'+(a.k===$('key').value?' sel':'');
+    const b=document.createElement('b');b.textContent=a.n;b.onclick=()=>{setKey(a.k,a.n);render()};
+    const x=document.createElement('button');x.textContent='🗑';x.title='Delete';
+    x.onclick=()=>{accts.splice(i,1);persist();render()};
+    d.append(b,x);box.appendChild(d)})}
+$('save').onclick=()=>{
+  if(!secret){$('msg').textContent='Enter a valid key first.';return}
+  const n=$('lbl').value.trim()||'Account '+(accts.length+1),k=$('key').value.trim();
+  const j=accts.findIndex(a=>a.k===k);
+  if(j>=0)accts[j].n=n;else accts.push({n,k});
+  persist();render();$('msg').textContent=''};
+$('key').addEventListener('input',render);
+render();
 tick();setInterval(tick,500);
 </script>
 </body>
